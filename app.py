@@ -288,47 +288,71 @@ def process_move(chosen_nums, player):
         st.session_state.winner = "Computer" if player == "user" else "User"
 
 
+def compute_user_win_prob(current_idx, last_player):
+    remaining = 21 - current_idx
+    if remaining <= 0:
+        return None
+
+    if last_player == 'start':
+        return 50
+
+    # Trap positions: opponent faces 5, 9, 13, 17, 21 (n ≡ 1 mod 4)
+    # next number to be picked = current_idx + 1
+    next_num = current_idx + 1
+
+    # If opponent (the one who just DIDN'T move) faces a trap number, current mover is winning
+    def is_trap(n):
+        return n % 4 == 1  # 1,5,9,13,17,21
+
+    if last_player == 'user':
+        # computer faces next_num — if trap, user is winning
+        comp_faces_trap = is_trap(next_num)
+        return 85 if comp_faces_trap else 20
+    else:
+        # user faces next_num — if trap, computer is winning (bad for user)
+        user_faces_trap = is_trap(next_num)
+        return 20 if user_faces_trap else 85
+
+
 def computer_turn():
     """
-    Difficulty controls how often the computer plays the optimal (game-theory) move.
-
-    Easy   → 25% chance of playing optimally; 75% purely random
-    Normal → 50% chance of playing optimally; 50% random
-    Hard   → 100% optimal play — computer never deviates from the winning strategy
-
-    Optimal strategy: always leave remaining count ≡ 0 (mod 4) for the opponent.
-    i.e. take  (remaining % 4)  numbers.  If that is 0 (already a losing position
-    for whoever moves next = computer), take 1 as damage control.
+    Corrected Hard difficulty: Computer forces the user to start 
+    their turn on numbers 1, 5, 9, 13, 17, or 21 (Trap numbers).
     """
     if st.session_state.game_over:
         return
 
     difficulty = st.session_state.get('difficulty', 'Normal')
-
-    # Smart-play probabilities per difficulty
     smart_prob = {'Easy': 0.25, 'Normal': 0.50, 'Hard': 1.00}[difficulty]
 
-    curr      = st.session_state.current_idx
+    curr = st.session_state.current_idx
     remaining = 21 - curr
-    max_take  = min(3, remaining - 1) if remaining > 1 else 1   # never take 21 if avoidable
+    
+    # ── Optimal move: End the turn on a multiple of 4 ────────────────────────
+    # If the user ends on 'curr', the computer takes 't' numbers.
+    # We want (curr + t) % 4 == 0.
+    # This solves to: t = (4 - (curr % 4)) % 4
+    ideal_take = (4 - (curr % 4)) % 4
 
-    # ── Optimal (game-theory) move ───────────────────────────────────────────
-    ideal_take = remaining % 4  # leaves a multiple-of-4 for opponent
-    if ideal_take < 1 or ideal_take > 3:
-        # Already in a losing position; take 1 as best damage control
+    # If ideal_take is 0, the user already left us on a multiple of 4.
+    # We are in a losing position and must take 1 to wait for a user mistake.
+    if ideal_take == 0:
         ideal_take = 1
 
     # ── Random move ──────────────────────────────────────────────────────────
+    # Max take is 3, but we can't take 21 unless forced.
+    max_take = min(3, remaining - 1) if remaining > 1 else 1
     random_take = random.randint(1, max_take)
 
-    # ── Decide based on difficulty ────────────────────────────────────────────
+    # ── Pick based on difficulty ──────────────────────────────────────────────
     take = ideal_take if random.random() < smart_prob else random_take
-
-    # Safety clamp — never exceed board or take 21 when avoidable
+    
+    # Final safety clamp: never take more than 3, and don't take 21 unless forced.
     take = max(1, min(take, max_take))
 
     chosen = list(range(curr + 1, curr + take + 1))
     process_move(chosen, 'comp')
+
 
 
 # --- MAIN UI ---
